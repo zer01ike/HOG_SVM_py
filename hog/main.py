@@ -12,6 +12,9 @@ from sklearn.externals import joblib
 
 from sklearn.cross_validation import train_test_split
 from sklearn import metrics
+
+import  multiprocessing
+
 def read_train_images(path):
     #打开文件目录，获取里面所有的图像文件添加到一个list中。
     pics=os.listdir(path)
@@ -48,9 +51,9 @@ def read_folio_images(path):
         for pic in pics:
             names.append(name)
             images.append(io.imread(path+name+'/'+pic))
-        print("reading :"+name+"   sucessful!!")
+        #print("reading :"+name+"   sucessful!!")
 
-    print("ALL reading is Done!!")
+    #print("ALL reading is Done!!")
 
     return names,images
 
@@ -76,16 +79,16 @@ def change_save_images(i_path, o_path):
             print(str(temp)+"/"+str(kind))
 
 #从单张图片中获取HOG的feature
-def HOG_feature(image):
+def HOG_feature(image,o,i,j):
     image = color.rgb2gray(image)
     if len(image) > len(image[0]):
         image = transform.resize(image, (688, 387))
     else:
         image = transform.resize(image, (387, 688))
     result = hog(image,
-                orientations=9,
-                pixels_per_cell=(8,8),
-                cells_per_block=(3,3),
+                orientations=o,
+                pixels_per_cell=(i,i),
+                cells_per_block=(j,j),
                 block_norm='L2-Hys',)
     return result
 
@@ -127,7 +130,7 @@ def SVM_train(names,HOG_features):
 def folio_SVM_Testing(names,HOG_features):
     X = np.array(HOG_features)
     y = np.array(names)
-    X_train,X_test,y_train,y_test=train_test_split(X,y,test_size=0.1)
+    X_train,X_test,y_train,y_test=train_test_split(X,y,test_size=0.2)
 
     clf = svm.LinearSVC()
     clf.fit(X_train,y_train)
@@ -141,7 +144,7 @@ def PCA_low(Hog_features):
     #print("Step 3:PCA starting")
     pca = PCA(n_components=0.9)
     pca.fit(Hog_features)
-    joblib.dump(pca, 'pca.model')
+    #joblib.dump(pca, 'pca.model')
     #print("Step 3:PCA sucessful!!")
     return pca.transform(Hog_features)
 
@@ -153,10 +156,11 @@ def prediction(image_path):
         test_image = transform.resize(test_image, (688, 387))
     else:
         test_image = transform.resize(test_image, (387, 688))
+    io.imsave("test.jpg",test_image)
     #test_image=transform.resize(test_image,(387,688))
     test_image=color.rgb2gray(test_image)
 
-    hog_features=HOG_feature(test_image)
+    hog_features=HOG_feature(test_image,10,38,3)
     hog_features=pca.transform([hog_features])
 
     return clf.predict(hog_features)
@@ -173,9 +177,9 @@ def train():
     #HOG_features = PCA_low(HOG_features)
     clf = SVM_train(labels, HOG_features)
 
-def train_folio():
+def train_folio_find_param():
     names, images = read_folio_images("../train_picture_folio_387_688/")
-    file=open("../result.txt",'a')
+    file=open("../result0.2.txt",'a')
     max_o=0
     max_i=0
     max_j=0
@@ -192,14 +196,55 @@ def train_folio():
                     max_clf= clf
                     max_j = j
             print(str(max_o) + "+"+str(max_i) + "+" + str(max_j) + "=" + str(max_clf))
-            file.writelines(str(max_o) + " "+str(max_i) + " " + str(max_j) + " " + str(max_clf))
+            file.writelines(str(max_o) + " "+str(max_i) + " " + str(max_j) + " " + str(max_clf)+"\n")
     file.close()
 
+def train_folio():
+    names, images = read_folio_images("../train_picture_folio_387_688/")
+    HOG_features = get_HOG_features(images,10,38,3)
+    HOG_features = PCA_low(HOG_features)
+    clf = SVM_train(names,HOG_features)
 
-
+def multipro_train_folio_find_param(o,i,j):
+    names, images = read_folio_images("../train_picture_folio_387_688/")
+    HOG_features = get_HOG_features(images,o, i, j)
+    HOG_features = PCA_low(HOG_features)
+    clf = folio_SVM_Testing(names, HOG_features)
+    #resultq.put(str(param[0]) + "+"+str(param[1]) + "+" + str(param[2]) + "=" + str(clf))
+    print(str(o) + "+"+str(i) + "+" + str(j) + "=" + str(clf))
 
 if __name__ == '__main__':
-    train_folio()
+    cores=multiprocessing.cpu_count()
+    pool=multiprocessing.Pool(processes=cores)
+
+    #result= pool.apply_async(multipro_train_folio_find_param,args=)
+
+    taskq = [(o,i,j) for o in range(5,15) for i in range(20,40) for j in range (3,6)]
+    result = pool.starmap_async(multipro_train_folio_find_param, taskq)
+    print(result.get())
+    pool.close()
+    pool.join()
+
+    # taskq=multiprocessing.Queue()
+    # resultq=multiprocessing.Queue()
+    # clock=multiprocessing.Lock()
+    #
+    # p=multiprocessing.Process(target=multipro_train_folio_find_param,args=(taskq,clock))
+    # p.start()
+    # for o in range(5,15):
+    #     for i in range(20,40):
+    #         for j in range(3,6):
+    #             taskq.put([o,i,j])
+    # taskq.close()
+    #
+    # #print(resultq.get())
+    # p.terminate()
+    #
+    # p.join()
+
+
+    #train_folio_find_param()
+    #train_folio()
     # result = prediction('../train_pictures/pictures/斑叶堇菜叶反.bmp')
     #
     # labels_names_path = "../train_pictures/label_names.txt"
@@ -208,4 +253,5 @@ if __name__ == '__main__':
     # #
     # print("预测结果是："+result[0])
     #change_save_images("../train_picutre_folio/", "../train_picture_folio_387_688/")
-
+    # result = prediction("../train_picture_folio_387_688/papaya/20150524_183008.jpg")
+    # print(result)
