@@ -90,10 +90,10 @@ def HOG_feature(image):
     return result
 
 #从文件目录中的所有文件获取feature
-def get_HOG_features(images):
+def get_HOG_features(images,o,i,j):
     #Attention: 图片的大小必须一致
     HOG_features=[]
-    print("Step 2 : get hog features:")
+    #print("Step 2 : get hog features:")
     total = len(images)
     current =0
     for image in images:
@@ -105,13 +105,13 @@ def get_HOG_features(images):
             image_gray_resize = transform.resize(image_gray, (387, 688))
         HOG_features.append(
             hog(image_gray_resize,
-                orientations=9,
-                pixels_per_cell=(8,8),
-                cells_per_block=(3,3))
+                orientations=o,
+                pixels_per_cell=(i,i),
+                cells_per_block=(j,j))
         )
-        print(str(current)+'/'+str(total)+" : proceed")
-    images.clear()
-    print("Step 2: get hog features successful")
+        #print(str(current)+'/'+str(total)+" : proceed")
+    #images.clear()
+    #print("Step 2: get hog features successful")
     return HOG_features
 
 def SVM_train(names,HOG_features):
@@ -134,15 +134,15 @@ def folio_SVM_Testing(names,HOG_features):
 
     y_pred = clf.predict(X_test)
 
-    print (metrics.accuracy_score(y_test,y_pred))
+    return metrics.accuracy_score(y_test,y_pred)
 
 
 def PCA_low(Hog_features):
-    print("Step 3:PCA starting")
+    #print("Step 3:PCA starting")
     pca = PCA(n_components=0.9)
     pca.fit(Hog_features)
     joblib.dump(pca, 'pca.model')
-    print("Step 3:PCA sucessful!!")
+    #print("Step 3:PCA sucessful!!")
     return pca.transform(Hog_features)
 
 def prediction(image_path):
@@ -175,9 +175,28 @@ def train():
 
 def train_folio():
     names, images = read_folio_images("../train_picture_folio_387_688/")
-    HOG_features=get_HOG_features(images)
-    HOG_features=PCA_low(HOG_features)
-    clf=folio_SVM_Testing(names,HOG_features)
+    file=open("../result.txt",'a')
+    max_o=0
+    max_i=0
+    max_j=0
+    for o in range(5,15):
+        max_o = o
+        for i in range(20, 40):
+            max_i = i
+            max_clf=0
+            for j in range(3, 7):
+                HOG_features = get_HOG_features(images,o, i, j)
+                HOG_features = PCA_low(HOG_features)
+                clf = folio_SVM_Testing(names, HOG_features)
+                if clf > max_clf:
+                    max_clf= clf
+                    max_j = j
+            print(str(max_o) + "+"+str(max_i) + "+" + str(max_j) + "=" + str(max_clf))
+            file.writelines(str(max_o) + " "+str(max_i) + " " + str(max_j) + " " + str(max_clf))
+    file.close()
+
+
+
 
 if __name__ == '__main__':
     train_folio()
